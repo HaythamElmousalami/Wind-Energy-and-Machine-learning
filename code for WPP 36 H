@@ -1,0 +1,576 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Nov 22 20:30:16 2018
+
+@author: Haytham Elmousalami
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+import os
+import psutil
+process = psutil.Process(os.getpid())
+print("Total CPU memory usage",process.memory_info().rss)
+
+#from scipy import stats
+
+dataset = pd.read_csv('30M Ahead Power.csv')
+X = dataset.iloc[0:7800 , 0:7].values
+y = dataset.iloc[0:7800 , 7].values
+
+# Splitting the dataset inWind power Fito the Training set and Test set
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = 1)
+
+# Feature Scaling
+#from sklearn.preprocessing import StandardScaler
+#sc = StandardScaler()
+#X_train = sc.fit_transform(X_train)
+#X_test = sc.transform(X_test)
+
+####   Exploratory Data analysis ###################################
+##############################################################
+
+# Visualising the parameters relations
+
+plt.scatter(dataset.iloc[0:7800 , 0].values, y, color = 'red')
+plt.title('Parameter correation', size = 30)
+plt.xlabel('Area surved', size = 30)
+plt.ylabel('y actual FCIPs cost')
+plt.show()
+
+
+
+############  Correation matrix ####################
+# Step 0 - Read the dataset, calculate column correlations and make a seaborn heatmap
+
+import seaborn as sns
+
+corr = dataset.corr()
+ax = sns.heatmap(
+    corr, 
+    vmin=-1, vmax=1, center=0,
+    cmap=sns.diverging_palette(20, 220, n=200),
+    square=True
+)
+ax.set_xticklabels(
+    ax.get_xticklabels(),
+    rotation=45,
+    horizontalalignment='right'
+);
+
+print(ax)
+
+#########  
+
+#pd.scatter_matrix(dataset, figsize=(12, 12))
+#plt.show()
+
+################  a Boxplot
+
+dataset.plot(kind='box', figsize=(25, 20))
+plt.show()
+
+############## Quick and Dirty Data Analysis with Pandas // Mastery
+
+#print(dataset)
+
+#print(dataset.describe())
+#print(dataset.boxplot(figsize=(16, 8)))
+#print(dataset.hist(figsize=(16, 8)))
+
+#from pandas.plotting import scatter_matrix
+#scatter_matrix(dataset, alpha=0.2, figsize=(10, 10), diagonal='kde')
+
+# scatter plot ########################################
+
+
+import seaborn as sns
+sns.set(style="ticks")
+
+df = dataset
+sns.pairplot(df)
+#sns.savefig("output.png")
+
+
+
+# XGBoost #############################################
+# Install xgboost following the instructions on this link: http://xgboost.readthedocs.io/en/latest/build.html#
+
+# Fitting XGBoost to the Training set
+from xgboost import XGBRegressor
+Reg = XGBRegressor()
+Reg.fit(X_train, y_train)
+
+
+# Predicting the Test set results
+y_pred_XGB = Reg.predict(X_test)
+
+# Making the MAPE
+def mean_absolute_percentage_error(y_test, y_pred): 
+    MAPE = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
+    return MAPE
+
+MAPE_XGB = mean_absolute_percentage_error(y_test, y_pred_XGB)
+
+print ("MAPE % XGBoost= ", MAPE_XGB )
+
+
+from sklearn.metrics import mean_squared_error
+MSE = mean_squared_error(y_test, y_pred_XGB)
+print ("MSE XGBoost = ",  mean_squared_error(y_test, y_pred_XGB))
+print ("Pearson Correlation (r) = ", np.corrcoef(Reg.predict(X), y))
+
+# compute with sklearn linear_model, although could not find any function to compute adjusted-r-square directly from documentation
+
+Adjusted_R2_XGBoost =  1 - (1-Reg.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1)
+print ("r-square =", Reg.score(X, y),"adjusted-r-square =",
+ 1 - (1-Reg.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1))
+
+
+
+# Applying k-Fold Cross Validation
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator = Reg, X = X_train, y = y_train, cv = 10)
+print ("10 cross validation mean XGBoost = ", accuracies.mean())
+print ("10 cross validation std XGBoost = ", accuracies.std())
+
+# feature importance
+from xgboost import plot_importance
+from matplotlib import pyplot
+plot_importance(Reg)
+pyplot.show()
+
+#   ANNs   ################    DNNs      ######################################################
+##############################################################
+
+from sklearn.neural_network import MLPRegressor
+clf = MLPRegressor(solver='lbfgs', alpha=1e-5,
+                     hidden_layer_sizes=(100, 3), random_state=1)
+clf.fit(X, y)
+
+
+y_pred_ANN =clf.predict(X_test)
+
+MAPE_ANNs = mean_absolute_percentage_error(y_test, y_pred_ANN)
+MSE_ANNs = mean_squared_error(y_test, y_pred_ANN)
+print ("MAPE % ANN= ", mean_absolute_percentage_error(y_test, y_pred_ANN))
+
+print ("MSE ANN = ",  mean_squared_error(y_test, y_pred_ANN))
+
+print ("Pearson Correlation (r) = ", np.corrcoef(clf.predict(X), y))
+
+# Applying k-Fold Cross Validation
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator = clf, X = X_train, y = y_train, cv = 10)
+print ("10 cross validation mean MLP = ", accuracies.mean())
+print ("10 cross validation std MLP = ", accuracies.std())
+
+# compute with sklearn linear_model, although could not find any function to compute adjusted-r-square directly from documentation
+
+R2_ANN = clf.score(X, y)
+Adjusted_R2_ANN =  1 - (1-clf.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1) 
+
+print ("r-square =", clf.score(X, y),"adjusted-r-square =",
+ 1 - (1-clf.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1))
+
+
+# Mutipe linear regression ######################################################
+##############################################################
+
+# Fitting Multiple Linear Regression to the Training set
+from sklearn.linear_model import LinearRegression
+regressor = LinearRegression()
+regressor.fit(X_train, y_train)
+
+
+# Predicting the Test set results
+y_pred_Linear_Regression = regressor.predict(X_test)
+
+# Visualising the parameters relations
+
+plt.scatter( y_test ,y_pred_Linear_Regression, color = 'red')
+plt.title('Regression model performance', size = 15)
+plt.xlabel('Actual values', size = 15)
+plt.ylabel('Predicted values', size = 15)
+plt.show()
+
+
+print ("MAPE % Linear_Regression= ", mean_absolute_percentage_error(y_test, y_pred_Linear_Regression))
+
+MAPE_Reg = mean_absolute_percentage_error(y_test, y_pred_Linear_Regression)
+MSE_Reg = mean_squared_error(y_test, y_pred_Linear_Regression)
+
+print ("MSE Linear_Regression = ",  mean_squared_error(y_test, y_pred_Linear_Regression))
+print ("Pearson Correlation (r) = ", np.corrcoef(regressor.predict(X), y))
+
+# Applying k-Fold Cross Validation
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator = regressor, X = X_train, y = y_train, cv = 10)
+print ("10 cross validation mean linear Reg = ", accuracies.mean())
+print ("10 cross validation std Lin Reg = ", accuracies.std())
+
+# compute with sklearn linear_model, although could not find any function to compute adjusted-r-square directly from documentation
+R2_Reg = regressor.score(X, y)
+A_R2_Reg = 1 - (1-regressor.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1)
+print ("r-square =", regressor.score(X, y),"adjusted-r-square =",
+ 1 - (1-regressor.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1))
+
+
+# Mutipe Polynomial regression ######################################################
+##############################################################
+
+# Fitting Polynomial Regression to the dataset
+from sklearn.preprocessing import PolynomialFeatures
+poly_reg = PolynomialFeatures(degree = 2)
+X_poly = poly_reg.fit_transform(X)
+poly_reg.fit(X_poly, y)
+
+
+lin_reg_2 = LinearRegression()
+lin_reg_2.fit(X_poly, y)
+
+# Predicting a new result with Polynomial Regression
+y_pred_Polynomial_Regression = lin_reg_2.predict(poly_reg.fit_transform(X_test))
+
+print ("MAPE % Polynomial_Regression = ", mean_absolute_percentage_error(y_test, y_pred_Polynomial_Regression))
+MAPE_POL_Reg = mean_absolute_percentage_error(y_test, y_pred_Polynomial_Regression)
+MSE_Pol_Reg = mean_squared_error(y_test, y_pred_Polynomial_Regression)
+print ("MSE Polynomial_Regression = ",  mean_squared_error(y_test, y_pred_Polynomial_Regression))
+
+r_Pol_Reg = np.corrcoef(lin_reg_2.predict(poly_reg.fit_transform(X)), y)
+print ("Pearson Correlation (r) = ", np.corrcoef(lin_reg_2.predict(poly_reg.fit_transform(X)), y))
+R2_Pol = r_Pol_Reg
+A_R2_Pol = R2_Pol
+# Applying k-Fold Cross Validation
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator = lin_reg_2, X = X_train, y = y_train, cv = 10)
+print ("10 cross validation mean lin_reg_Poly = ", accuracies.mean())
+print ("10 cross validation std lin_reg_Poly = ", accuracies.std())
+
+# compute with sklearn linear_model, although could not find any function to compute adjusted-r-square directly from documentation
+
+#print ("r-square =", lin_reg_2.score(X, y))
+
+# Visualising the polynomial Regression results
+plt.scatter(y, lin_reg_2.predict(poly_reg.fit_transform(X))
+, color = 'red')
+plt.title('AI is the New Electricity')
+plt.xlabel('y actual FCIPs cost')
+plt.ylabel('y predicted FCIPs cost')
+plt.show()
+
+# Fitting SVR to the dataset ###########################
+############################################################
+
+from sklearn.svm import SVR
+SVReg = SVR(kernel = 'rbf')
+SVReg.fit(X_train, y_train)
+
+
+SVM_test_pre = SVReg.predict(X_test)
+SVM_train_pre = SVReg.predict(X_train)
+
+MAPE_SVM = mean_absolute_percentage_error(y_test, SVReg.predict(X_test))
+MSE_SVM = mean_squared_error(y_test, SVReg.predict(X_test))
+print ("MAPE % SVR= ", mean_absolute_percentage_error(y_test, SVReg.predict(X_test)))
+print ("MSE SVR = ",  mean_squared_error(y_test, SVReg.predict(X_test)))
+print ("Pearson Correlation (r) = ", np.corrcoef(SVReg.predict(X), y))
+
+# Applying k-Fold Cross Validation
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator = SVReg, X = X_train, y = y_train, cv = 10)
+print ("10 cross validation mean SVR = ", accuracies.mean())
+print ("10 cross validation std SVR = ", accuracies.std())
+
+# compute with sklearn linear_model, although could not find any function to compute adjusted-r-square directly from documentation
+
+R2_SVM = SVReg.score(X, y)
+A_R2_SVM = 1 - (1-SVReg.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1)
+print ("r-square =", SVReg.score(X, y),"adjusted-r-square =",
+ 1 - (1-SVReg.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1))
+
+
+# Fitting Decision Tree Regression to the dataset ################
+########################################################
+
+from sklearn.tree import DecisionTreeRegressor
+DTR = DecisionTreeRegressor(random_state = 0)
+DTR.fit(X_train, y_train)
+
+DTR_pre_test = DTR.predict(X_test)
+DTR_pre_train = DTR.predict(X_train)
+
+
+print ("MAPE % DTR= ", mean_absolute_percentage_error(y_test, DTR.predict(X_test)))
+
+MAPE_DT = mean_absolute_percentage_error(y_test, DTR.predict(X_test))
+MSE_DT = mean_squared_error(y_test, DTR.predict(X_test))
+
+
+print ("MSE DTR = ",  mean_squared_error(y_test, DTR.predict(X_test)))
+print ("Pearson Correlation (r) = ", np.corrcoef(DTR.predict(X), y))
+
+# Applying k-Fold Cross Validation
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator = DTR, X = X_train, y = y_train, cv = 10)
+print ("10 cross validation mean DT = ", accuracies.mean())
+print ("10 cross validation std DT = ", accuracies.std())
+
+
+R2_DT = DTR.score(X, y)
+A_R2_DT = 1 - (1-DTR.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1)
+# compute with sklearn linear_model, although could not find any function to compute adjusted-r-square directly from documentation
+
+print ("r-square =", DTR.score(X, y),"adjusted-r-square =",
+ 1 - (1-DTR.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1))
+
+
+
+# Fitting Random Forest Regression to the dataset #########################
+#####################################################
+
+from sklearn.ensemble import RandomForestRegressor
+RFR = RandomForestRegressor(n_estimators = 10, random_state = 0)
+RFR.fit(X_train, y_train)
+
+
+RFR_regression = RFR.predict(X_test)
+print ("MAPE % RFR= ", mean_absolute_percentage_error(y_test, RFR.predict(X_test)))
+MAPE_RF = mean_absolute_percentage_error(y_test, RFR.predict(X_test))
+print ("MSE RFR = ",  mean_squared_error(y_test, RFR.predict(X_test)))
+MSE_RF =  mean_squared_error(y_test, RFR.predict(X_test))
+print ("Pearson Correlation (r) = ", np.corrcoef(RFR.predict(X), y) )
+
+# Applying k-Fold Cross Validation
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator = RFR, X = X_train, y = y_train, cv = 10)
+print ("10 cross validation mean RFR = ", accuracies.mean())
+print ("10 cross validation std RFR = ", accuracies.std())
+
+# compute with sklearn linear_model, although could not find any function to compute adjusted-r-square directly from documentation
+R2_RF  = RFR.score(X, y)
+A_R2_RF = 1 - (1-RFR.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1)
+print ("r-square =", RFR.score(X, y),"adjusted-r-square =",
+ 1 - (1-RFR.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1))
+
+############# Bagged Decision Trees for regression
+import pandas
+from sklearn import model_selection
+from sklearn.ensemble import BaggingRegressor
+from sklearn.tree import DecisionTreeRegressor
+#url = "https://raw.githubusercontent.com/jbrownlee/Datasets/master/pima-indians-diabetes.data.csv"
+#names = ['preg', 'plas', 'pres', 'skin', 'test', 'mass', 'pedi', 'age', 'class']
+#dataframe = pandas.read_csv(url, names=names)
+#array = dataframe.values
+#X = array[:,0:8]
+#Y = array[:,8]
+seed = 7
+kfold = model_selection.KFold(n_splits=10, random_state=seed)
+cart = DecisionTreeRegressor()
+num_trees = 100
+model_Bagging = BaggingRegressor(base_estimator=cart, n_estimators=num_trees, random_state=seed)
+model_Bagging.fit(X_train, y_train)
+
+
+results = model_selection.cross_val_score(model_Bagging, X, y, cv=kfold)
+print(results.mean())
+
+model_Bagging_regression = model_Bagging.predict(X_test)
+
+print ("MAPE % RFR= ", mean_absolute_percentage_error(y_test, model_Bagging.predict(X_test)))
+MAPE_Bag = mean_absolute_percentage_error(y_test, model_Bagging.predict(X_test))
+print ("MSE RFR = ",  mean_squared_error(y_test, model_Bagging.predict(X_test)))
+MSE_Bag = mean_squared_error(y_test, model_Bagging.predict(X_test))
+print ("Pearson Correlation (r) = ", np.corrcoef(model_Bagging.predict(X), y) )
+
+# Applying k-Fold Cross Validation
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator = model_Bagging, X = X_train, y = y_train, cv = 10)
+print ("10 cross validation mean Bagging = ", accuracies.mean())
+print ("10 cross validation std Bagging = ", accuracies.std())
+
+# compute with sklearn linear_model, although could not find any function to compute adjusted-r-square directly from documentation
+
+print ("r-square =", model_Bagging.score(X, y),"adjusted-r-square =",
+ 1 - (1-model_Bagging.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1))
+
+R2_Bag =   model_Bagging.score(X, y)
+A_R2_Bag = 1 - (1-model_Bagging.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1)
+
+
+############# Extra Trees regression ########
+import pandas
+from sklearn import model_selection
+from sklearn.ensemble import ExtraTreesRegressor
+seed = 3
+num_trees = 100
+max_features = 3
+kfold = model_selection.KFold(n_splits=10, random_state=seed)
+model_Extra_Trees = ExtraTreesRegressor(n_estimators=num_trees, max_features=max_features)
+model_Extra_Trees.fit(X_train, y_train)
+
+
+results = model_selection.cross_val_score(model_Extra_Trees, X, y, cv=kfold)
+print(results.mean())
+
+model_Extra_regression = model_Extra_Trees.predict(X_test)
+
+print ("MAPE % Extra_Trees= ", mean_absolute_percentage_error(y_test, model_Extra_Trees.predict(X_test)))
+MAPE_Extra = mean_absolute_percentage_error(y_test, model_Extra_Trees.predict(X_test))
+print ("MSE Extra_Trees = ",  mean_squared_error(y_test, model_Extra_Trees.predict(X_test)))
+MSE_Extra = mean_squared_error(y_test, model_Extra_Trees.predict(X_test))
+print ("Pearson Correlation (r) = ", np.corrcoef(model_Extra_Trees.predict(X), y) )
+
+# Applying k-Fold Cross Validation
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator = model_Extra_Trees, X = X_train, y = y_train, cv = 10)
+print ("10 cross validation mean model_Extra_Trees = ", accuracies.mean())
+print ("10 cross validation std model_Extra_Trees = ", accuracies.std())
+
+# compute with sklearn linear_model, although could not find any function to compute adjusted-r-square directly from documentation
+
+print ("r-square =", model_Extra_Trees.score(X, y),"adjusted-r-square =",
+ 1 - (1-model_Extra_Trees.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1))
+
+R2_Extra = model_Extra_Trees.score(X, y)
+A_R2_Extra = 1 - (1-model_Extra_Trees.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1)
+
+
+
+
+# AdaBoost regression ################################
+from sklearn import model_selection
+from sklearn.ensemble import AdaBoostRegressor
+
+seed = 6
+num_trees = 100
+kfold = model_selection.KFold(n_splits=10, random_state=seed)
+model_AdaBoost = AdaBoostRegressor(n_estimators=num_trees, random_state=seed)
+model_AdaBoost.fit(X_train, y_train)
+
+
+results = model_selection.cross_val_score(model_AdaBoost, X, y, cv=kfold)
+print(results.mean())
+
+model_AdaBoost_regression = model_AdaBoost.predict(X_test)
+
+print ("MAPE % AdaBoost= ", mean_absolute_percentage_error(y_test, model_AdaBoost.predict(X_test)))
+MAPE_AdaB = mean_absolute_percentage_error(y_test, model_AdaBoost.predict(X_test))
+print ("MSE AdaBoost = ",  mean_squared_error(y_test, model_AdaBoost.predict(X_test)))
+MSE_AdaB = mean_squared_error(y_test, model_AdaBoost.predict(X_test))
+print ("Pearson Correlation (r) = ", np.corrcoef(model_AdaBoost.predict(X), y) )
+
+# Applying k-Fold Cross Validation
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator = model_AdaBoost, X = X_train, y = y_train, cv = 10)
+print ("10 cross validation mean model_Extra_Trees = ", accuracies.mean())
+print ("10 cross validation std model_Extra_Trees = ", accuracies.std())
+
+# compute with sklearn linear_model, although could not find any function to compute adjusted-r-square directly from documentation
+
+print ("r-square =", model_AdaBoost.score(X, y),"adjusted-r-square =",
+ 1 - (1-model_AdaBoost.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1))
+
+R2_AdaB = model_AdaBoost.score(X, y)
+A_R2_AdaB = 1 - (1-model_AdaBoost.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1)
+
+
+######## Stochastic Gradient Boosting Classification ####
+from sklearn import model_selection
+from sklearn.ensemble import GradientBoostingRegressor
+
+seed = 6
+num_trees = 100
+kfold = model_selection.KFold(n_splits=10, random_state=seed)
+model_GradientBoostingRegressor = GradientBoostingRegressor(n_estimators=num_trees, random_state=seed)
+model_GradientBoostingRegressor.fit(X_train, y_train)
+
+
+#results = model_selection.cross_val_score(GradientBoostingRegressor, X, y, cv=kfold)
+#print(results.mean())
+
+model_GradientBoosting_regression = model_GradientBoostingRegressor.predict(X_test)
+
+print ("MAPE % GradientBoosting= ", mean_absolute_percentage_error(y_test, model_GradientBoosting_regression))
+MAPE_SGB = mean_absolute_percentage_error(y_test, model_GradientBoosting_regression)
+print ("MSE GradientBoosting = ",  mean_squared_error(y_test, model_GradientBoosting_regression))
+MSE_SGB  = mean_squared_error(y_test, model_GradientBoosting_regression)
+print ("Pearson Correlation (r) = ", np.corrcoef(model_GradientBoosting_regression, y_test) )
+
+# Applying k-Fold Cross Validation
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator = model_GradientBoostingRegressor, X = X_train, y = y_train, cv = 10)
+print ("10 cross validation mean model_GradientBoostingRegressor = ", accuracies.mean())
+print ("10 cross validation std model_GradientBoostingRegressor = ", accuracies.std())
+
+# compute with sklearn linear_model, although could not find any function to compute adjusted-r-square directly from documentation
+
+print ("r-square =", model_GradientBoostingRegressor.score(X, y),"adjusted-r-square =",
+ 1 - (1-model_GradientBoostingRegressor.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1))
+
+R2_SGB = model_GradientBoostingRegressor.score(X, y)
+
+A_R2_SGB =  1 - (1-model_GradientBoostingRegressor.score(X, y))*(len(y)-1)/(len(y)-X.shape[1]-1)
+
+### Export to excel ###################################
+##########################################################
+df1 = pd.DataFrame([
+        [MAPE_XGB,MSE,Reg.score(X, y),Adjusted_R2_XGBoost ],
+        [MAPE_ANNs,MSE_ANNs,R2_ANN,Adjusted_R2_ANN ],
+        [MAPE_Reg,MSE_Reg, R2_Reg, A_R2_Reg ],            
+        [MAPE_POL_Reg,MSE_Pol_Reg, R2_Pol, A_R2_Pol  ],            
+        [MAPE_SVM ,MSE_SVM, R2_SVM, A_R2_SVM  ],            
+        [MAPE_DT ,MSE_DT, R2_DT, A_R2_DT  ],            
+        [MAPE_RF ,MSE_RF, R2_RF, A_R2_RF  ],            
+        [MAPE_Bag ,MSE_Bag, R2_Bag, A_R2_Bag  ],            
+        [MAPE_Extra ,MSE_Extra, R2_Extra, A_R2_Extra  ],            
+        [MAPE_AdaB ,MSE_AdaB, R2_AdaB, A_R2_AdaB  ],            
+        [MAPE_SGB ,MSE_SGB, R2_SGB, A_R2_SGB  ],            
+
+                                            ],
+                    index=[
+                        'XGBoost',
+                        'ANNs',
+                        'Regression',
+                        'Polynomial regression',
+                        'SVM',
+                        'DT',
+                        'RF',
+                        'Bagging',
+                        'Extra Trees',
+                        'AdaBoost',
+                        'SGB'
+                           ],
+                            
+                   columns=['MAPE', 'MSE','R2', 'R*2',])
+
+df1.to_excel("output.xlsx")  # doctest: +SKIP
+
+###################### test_2 ############################
+
+#dataset = pd.read_csv('216 pre speed.csv')
+# = dataset.iloc[0:216 , 0:7].values
+#y_t2 = dataset.iloc[0:216 , -1].values
+
+#Y_Pred_216 = model_Extra_Trees.predict(X_t2)
+
+ 
+# Resuidal plots ########################################
+
+import numpy as np
+import seaborn as sns
+sns.set(style="whitegrid")
+
+# Make an example dataset with y ~ x
+
+
+# Plot the residuals after fitting a linear model
+sns.residplot(SVM_test_pre, y_test, lowess=True, color="g")
+
+# Plot the residuals after fitting a linear model
+#sns.residplot(DTR_pre_test, y_test, lowess=True, color="g")
+
+
